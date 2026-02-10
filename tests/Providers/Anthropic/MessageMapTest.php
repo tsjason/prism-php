@@ -16,6 +16,7 @@ use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 use Prism\Prism\ValueObjects\Messages\SystemMessage;
 use Prism\Prism\ValueObjects\Messages\ToolResultMessage;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
+use Prism\Prism\ValueObjects\Artifact;
 use Prism\Prism\ValueObjects\ToolCall;
 use Prism\Prism\ValueObjects\ToolResult;
 
@@ -694,5 +695,76 @@ describe('Anthropic provider tool calls mapping', function (): void {
                 ],
             ],
         ]);
+    });
+});
+
+describe('Anthropic tool result artifact mapping', function (): void {
+
+    it('emits base64 image blocks for artifacts without a url source marker', function (): void {
+        $toolResult = new ToolResult(
+            toolCallId: 'call-1',
+            toolName: 'demo',
+            args: [],
+            result: 'done',
+            artifacts: [
+                new Artifact(data: 'aW1hZ2UtYnl0ZXM=', mimeType: 'image/png'),
+            ],
+        );
+
+        $mapped = MessageMap::map([new ToolResultMessage([$toolResult])]);
+
+        expect($mapped[0]['content'][0]['content'])->toBe([
+            ['type' => 'text', 'text' => 'done'],
+            [
+                'type' => 'image',
+                'source' => [
+                    'type' => 'base64',
+                    'media_type' => 'image/png',
+                    'data' => 'aW1hZ2UtYnl0ZXM=',
+                ],
+            ],
+        ]);
+    });
+
+    it('emits url-source image blocks when artifact metadata says source=url', function (): void {
+        $toolResult = new ToolResult(
+            toolCallId: 'call-2',
+            toolName: 'demo',
+            args: [],
+            result: 'done',
+            artifacts: [
+                new Artifact(
+                    data: 'https://example.com/image.png',
+                    mimeType: 'image/png',
+                    metadata: ['source' => 'url'],
+                ),
+            ],
+        );
+
+        $mapped = MessageMap::map([new ToolResultMessage([$toolResult])]);
+
+        expect($mapped[0]['content'][0]['content'])->toBe([
+            ['type' => 'text', 'text' => 'done'],
+            [
+                'type' => 'image',
+                'source' => [
+                    'type' => 'url',
+                    'url' => 'https://example.com/image.png',
+                ],
+            ],
+        ]);
+    });
+
+    it('passes tool results without artifacts through as a plain string', function (): void {
+        $toolResult = new ToolResult(
+            toolCallId: 'call-3',
+            toolName: 'demo',
+            args: [],
+            result: 'just-text',
+        );
+
+        $mapped = MessageMap::map([new ToolResultMessage([$toolResult])]);
+
+        expect($mapped[0]['content'][0]['content'])->toBe('just-text');
     });
 });
