@@ -86,6 +86,9 @@
     ]
   },
   "extra": {
+    "branch-alias": {
+      "dev-main": "0.99.x-dev"
+    },
     "laravel": {
       "providers": [
         "Prism\\Prism\\PrismServiceProvider"

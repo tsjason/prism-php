@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Prism\Prism\Providers\Anthropic\Concerns;
 
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Prism\Prism\Contracts\PrismRequest;
 use Prism\Prism\Exceptions\PrismException;
@@ -20,10 +21,29 @@ trait HandlesHttpRequests
     protected function sendRequest(): void
     {
         /** @var Response $response */
-        $response = $this->client->post(
-            'messages',
-            static::buildHttpRequestPayload($this->request)
-        );
+        $response = $this->client
+            ->retry(
+                times: 3,
+                sleepMilliseconds: function (int $attempt, \Throwable $exception): int {
+                    if ($exception instanceof RequestException && $exception->response->header('retry-after')) {
+                        return (int) $exception->response->header('retry-after') * 1000;
+                    }
+
+                    return min(1000 * (2 ** ($attempt - 1)), 10000);
+                },
+                when: function (\Throwable $exception): bool {
+                    if ($exception instanceof RequestException) {
+                        return in_array($exception->response->getStatusCode(), [429, 500, 502, 503, 529]);
+                    }
+
+                    return false;
+                },
+                throw: true,
+            )
+            ->post(
+                'messages',
+                static::buildHttpRequestPayload($this->request)
+            );
 
         $this->httpResponse = $response;
 

@@ -14,6 +14,7 @@ use Prism\Prism\ValueObjects\Messages\AssistantMessage;
 use Prism\Prism\ValueObjects\Messages\SystemMessage;
 use Prism\Prism\ValueObjects\Messages\ToolResultMessage;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
+use Prism\Prism\ValueObjects\Artifact;
 use Prism\Prism\ValueObjects\ToolCall;
 use Prism\Prism\ValueObjects\ToolResult;
 
@@ -93,11 +94,45 @@ class MessageMap
                 return array_filter([
                     'type' => 'tool_result',
                     'tool_use_id' => $toolResult->toolCallId,
-                    'content' => $toolResult->result,
+                    'content' => $toolResult->hasArtifacts()
+                        ? self::buildToolResultContent($toolResult)
+                        : $toolResult->result,
                     'cache_control' => $isLastResult ? self::normalizeCacheControl($message) : null,
                 ]);
             }, $toolResults, array_keys($toolResults)),
         ];
+    }
+
+    /**
+     * Build content array with text and image blocks for tool results with artifacts.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected static function buildToolResultContent(ToolResult $toolResult): array
+    {
+        $content = [];
+
+        if ($toolResult->result !== null && $toolResult->result !== '') {
+            $content[] = [
+                'type' => 'text',
+                'text' => is_string($toolResult->result) ? $toolResult->result : json_encode($toolResult->result),
+            ];
+        }
+
+        foreach ($toolResult->artifacts as $artifact) {
+            if ($artifact instanceof Artifact && str_starts_with($artifact->mimeType, 'image/')) {
+                $content[] = [
+                    'type' => 'image',
+                    'source' => [
+                        'type' => 'base64',
+                        'media_type' => $artifact->mimeType,
+                        'data' => $artifact->data,
+                    ],
+                ];
+            }
+        }
+
+        return $content;
     }
 
     /**
